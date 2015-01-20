@@ -1,6 +1,5 @@
 package elobanova.cometd;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -127,45 +126,43 @@ public class ChatService {
 	@Listener("/service/privatechat")
 	public void privateChat(ServerSession client, ServerMessage message) {
 		Map<String, Object> data = message.getDataAsMap();
+
 		String room = ((String) data.get("room")).substring("/chat/".length());
 		Map<String, String> membersMap = _members.get(room);
 		if (membersMap == null) {
-			Map<String, String> new_room = new ConcurrentHashMap<>();
+			Map<String, String> new_room = new ConcurrentHashMap<String, String>();
 			membersMap = _members.putIfAbsent(room, new_room);
 			if (membersMap == null)
 				membersMap = new_room;
 		}
-		String[] peerNames = ((String) data.get("peer")).split(",");
-		ArrayList<ServerSession> peers = new ArrayList<>(peerNames.length);
 
-		for (String peerName : peerNames) {
-			String peerId = membersMap.get(peerName);
-			if (peerId != null) {
-				ServerSession peer = _bayeux.getSession(peerId);
-				if (peer != null)
-					peers.add(peer);
-			}
-		}
+		String peerName = (String) data.get("peer");
+		String peerId = membersMap.get(peerName);
 
-		if (peers.size() > 0) {
-			Map<String, Object> chat = new HashMap<>();
-			String text = (String) data.get("chat");
-			chat.put("chat", text);
-			chat.put("user", data.get("user"));
-			chat.put("scope", "private");
-			ServerMessage.Mutable forward = _bayeux.newMessage();
-			forward.setChannel("/chat/" + room);
-			forward.setId(message.getId());
-			forward.setData(chat);
+		if (peerId != null) {
 
-			// test for lazy messages
-			if (text.lastIndexOf("lazy") > 0)
-				forward.setLazy(true);
+			ServerSession peer = _bayeux.getSession(peerId);
 
-			for (ServerSession peer : peers)
-				if (peer != client)
+			if (peer != null) {
+				Map<String, Object> chat = new HashMap<String, Object>();
+				String text = (String) data.get("chat");
+				chat.put("chat", text);
+				chat.put("user", data.get("user"));
+				chat.put("scope", "private");
+				chat.put("peer", peerName);
+				ServerMessage.Mutable forward = _bayeux.newMessage();
+				forward.setChannel("/chat/" + room);
+				forward.setId(message.getId());
+				forward.setData(chat);
+
+				if (text.lastIndexOf("lazy") > 0) {
+					forward.setLazy(true);
+				}
+				if (peer != client) {
 					peer.deliver(_session, forward);
-			client.deliver(_session, forward);
+				}
+				client.deliver(_session, forward);
+			}
 		}
 	}
 
